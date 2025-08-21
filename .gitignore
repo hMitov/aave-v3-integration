@@ -1,0 +1,27 @@
+# Foundry build files
+cache/
+out/
+
+# Foundry deployment logs
+/broadcast/
+!/broadcast/DeployAaveV3Provider.s.sol/
+/broadcast/**/dry-run/
+**/run-latest.json
+
+# Node.js dependencies
+node_modules/
+
+# Environment variables
+.env
+.env.*
+
+# IDE and system files
+.idea/
+.vscode/
+.DS_Store
+
+# Logs
+*.log
+
+# Docs
+docs/

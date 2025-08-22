@@ -47,7 +47,7 @@ contract AaveV3ProviderIT is Test {
     function setUp() public {
         // Fork mainnet at a recent block where Aave V3 is deployed and stable
         // Using a more recent block to get better interest rate conditions
-        mainnetFork = vm.createFork("https://eth.llamarpc.com", 19000000);
+        mainnetFork = vm.createFork("https://ethereum-rpc.publicnode.com", 19000000);
         vm.selectFork(mainnetFork);
 
         admin = makeAddr("admin");

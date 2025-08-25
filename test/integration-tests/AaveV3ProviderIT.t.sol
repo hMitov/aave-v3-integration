@@ -10,6 +10,7 @@ import {IAToken} from "@aave/core-v3/contracts/interfaces/IAToken.sol";
 import {IVariableDebtToken} from "@aave/core-v3/contracts/interfaces/IVariableDebtToken.sol";
 import {DataTypes} from "@aave/core-v3/contracts/protocol/libraries/types/DataTypes.sol";
 import {IAaveV3Provider} from "../../src/interfaces/IAaveV3Provider.sol";
+import {console} from "forge-std/console.sol";
 
 contract AaveV3ProviderIT is Test {
     // Mainnet addresses - using correct checksums
@@ -47,7 +48,7 @@ contract AaveV3ProviderIT is Test {
     function setUp() public {
         // Fork mainnet at a recent block where Aave V3 is deployed and stable
         // Using a more recent block to get better interest rate conditions
-        mainnetFork = vm.createFork("https://ethereum-rpc.publicnode.com", 19000000);
+        mainnetFork = vm.createFork("https://eth.llamarpc.com", 19000000);
         vm.selectFork(mainnetFork);
 
         admin = makeAddr("admin");
@@ -438,7 +439,7 @@ contract AaveV3ProviderIT is Test {
 
         // After full withdrawal, scaled supply should be 0 or very close to 0
         uint256 finalScaledSupply = provider.userScaledSupply(user1, WETH);
-        assertEq(finalScaledSupply, 0, "Scaled supply should be 0 after full withdrawal");
+        assertApproxEqAbs(finalScaledSupply, 0, 1, "Scaled supply should be 0 after full withdrawal");
 
         // Total scaled supply should also be updated
         assertEq(
@@ -547,7 +548,7 @@ contract AaveV3ProviderIT is Test {
 
         // Verify borrow with comprehensive checks
         uint256 userBorrowAfterBorrow = provider.getUserBorrowBalance(user1, USDC);
-        assertEq(userBorrowAfterBorrow, BORROW_AMOUNT, "User should have borrow balance");
+        assertApproxEqAbs(userBorrowAfterBorrow, BORROW_AMOUNT, 5, "User should have borrow balance");
 
         // Check scaled borrow balance
         uint256 scaledBorrowAfterBorrow = provider.userScaledBorrow(user1, USDC);
@@ -779,8 +780,7 @@ contract AaveV3ProviderIT is Test {
 
         // Verify borrow with comprehensive checks
         uint256 userBorrowAfterBorrow = provider.getUserBorrowBalance(user1, USDC);
-        assertEq(userBorrowAfterBorrow, borrowAmount, "User should have borrow balance");
-
+        assertApproxEqAbs(userBorrowAfterBorrow, borrowAmount, 5, "User should have borrow balance");
         // Check scaled borrow balance
         uint256 scaledBorrowAfterBorrow = provider.userScaledBorrow(user1, USDC);
         assertGt(scaledBorrowAfterBorrow, 0, "User should have scaled borrow balance");
@@ -800,7 +800,7 @@ contract AaveV3ProviderIT is Test {
         /// Partial repayment
         // Get the current borrow balance (in a test environment, this may not have increased due to interest yet)
         uint256 currentBorrowBalance = provider.getUserBorrowBalance(user1, USDC);
-        assertEq(currentBorrowBalance, borrowAmount, "Borrow balance should equal the borrowed amount initially");
+        assertApproxEqAbs(currentBorrowBalance, borrowAmount, 5, "Borrow balance should equal the borrowed amount initially");
 
         // Repay half of the current balance
         uint256 repayAmount = currentBorrowBalance / 2;
@@ -856,8 +856,7 @@ contract AaveV3ProviderIT is Test {
 
         // After full repayment, scaled borrow should be 0 or very close to 0
         uint256 finalScaledBorrow = provider.userScaledBorrow(user1, USDC);
-        assertEq(finalScaledBorrow, 0, "Scaled borrow should be 0 after full repayment");
-
+        assertApproxEqAbs(finalScaledBorrow, 0, 1, "Scaled borrow should be 0 after full repayment");
         // Total scaled borrow should also be updated
         assertEq(
             provider.totalScaledBorrow(USDC), finalScaledBorrow, "Total scaled borrow should match user scaled borrow"

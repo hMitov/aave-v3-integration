@@ -52,6 +52,8 @@ contract AaveV3Provider is IAaveV3Provider, ReentrancyGuard, Pausable, AccessCon
     uint256 private constant BPS_DENOM = 10_000;
     /// @notice WAD constant (1e18) for precision
     uint256 private constant WAD = 1e18;
+    /// @notice RAY constant (1e27) for precision
+    uint256 private constant RAY = 1e27;
 
     /// @notice The Aave V3 pool contract
     IPool public immutable aavePool;
@@ -318,14 +320,8 @@ contract AaveV3Provider is IAaveV3Provider, ReentrancyGuard, Pausable, AccessCon
         uint256 userScaled = userScaledSupply[user][asset];
         if (userScaled == 0) return 0;
 
-        uint256 ourTotalScaled = totalScaledSupply[asset];
-        if (ourTotalScaled == 0) return 0;
-
-        address aToken = _getAToken(asset);
-        uint256 totalBalance = IAToken(aToken).balanceOf(address(this)); // Contract's current balance with interest
-
-        // Calculate user's share with interest of the contract's TOTAL balance
-        return (userScaled * totalBalance) / ourTotalScaled;
+        uint256 li = aavePool.getReserveNormalizedIncome(asset);
+        return (userScaled * li) / RAY;
     }
 
     /**
@@ -340,15 +336,8 @@ contract AaveV3Provider is IAaveV3Provider, ReentrancyGuard, Pausable, AccessCon
         uint256 userScaled = userScaledBorrow[user][asset];
         if (userScaled == 0) return 0;
 
-        uint256 ourTotalScaled = totalScaledBorrow[asset]; // Only OUR scaled debt
-        if (ourTotalScaled == 0) return 0;
-
-        address debtToken = _getDebtToken(asset);
-        uint256 totalDebt = IERC20(debtToken).balanceOf(address(this)); // Contract's total debt with interest
-
-        // Calculate user's share of the contract's TOTAL debt
-        // (including any external borrows/interest)
-        return (userScaled * totalDebt) / ourTotalScaled;
+        uint256 di = aavePool.getReserveNormalizedVariableDebt(asset);
+        return (userScaled * di) / RAY;
     }
 
     /*//////////////////////////////////////////////////////////////

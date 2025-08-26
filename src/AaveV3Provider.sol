@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import "@openzeppelin/contracts/security/Pausable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/access/AccessControl.sol";
-import "@aave/core-v3/contracts/dependencies/openzeppelin/contracts/IERC20Detailed.sol";
-import "@aave/core-v3/contracts/dependencies/openzeppelin/contracts/SafeERC20.sol";
-import "@aave/core-v3/contracts/interfaces/IPool.sol";
-import "@aave/core-v3/contracts/interfaces/IAToken.sol";
-import "@aave/core-v3/contracts/interfaces/IVariableDebtToken.sol";
-import "@aave/core-v3/contracts/protocol/libraries/types/DataTypes.sol";
-import "@aave/core-v3/contracts/interfaces/IAaveOracle.sol";
-import "./interfaces/IAaveV3Provider.sol";
+import {Pausable} from "@openzeppelin/contracts/security/Pausable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+import {IERC20Detailed} from "@aave/core-v3/contracts/dependencies/openzeppelin/contracts/IERC20Detailed.sol";
+import {SafeERC20} from "@aave/core-v3/contracts/dependencies/openzeppelin/contracts/SafeERC20.sol";
+import {IERC20} from "@aave/core-v3/contracts/dependencies/openzeppelin/contracts/IERC20.sol";
+import {IPool} from "@aave/core-v3/contracts/interfaces/IPool.sol";
+import {IAToken} from "@aave/core-v3/contracts/interfaces/IAToken.sol";
+import {IVariableDebtToken} from "@aave/core-v3/contracts/interfaces/IVariableDebtToken.sol";
+import {DataTypes} from "@aave/core-v3/contracts/protocol/libraries/types/DataTypes.sol";
+import {IAaveOracle} from "@aave/core-v3/contracts/interfaces/IAaveOracle.sol";
+import {ReserveConfiguration} from "@aave/core-v3/contracts/protocol/libraries/configuration/ReserveConfiguration.sol";
+import {IAaveV3Provider} from "./interfaces/IAaveV3Provider.sol";
 
 /**
  * @title AaveV3Provider
@@ -35,6 +37,7 @@ import "./interfaces/IAaveV3Provider.sol";
  */
 contract AaveV3Provider is IAaveV3Provider, ReentrancyGuard, Pausable, AccessControl {
     using SafeERC20 for IERC20;
+    using ReserveConfiguration for DataTypes.ReserveConfigurationMap;
 
     /// @notice Role for administrative functions
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
@@ -43,33 +46,38 @@ contract AaveV3Provider is IAaveV3Provider, ReentrancyGuard, Pausable, AccessCon
 
     // Aave rate enum
     /// @notice Aave variable rate mode constant
-    uint256 private constant VARIABLE_RATE = 2;
+    uint256 private constant _VARIABLE_RATE = 2;
     /// @notice Minimum health factor threshold (1.00 in WAD)
-    uint256 private constant MIN_HF = 1e18; // 1.00 in WAD; can set > 1e18 (e.g., 1.05e18)
+    uint256 private constant _MIN_HF = 1e18; // 1.00 in WAD; can set > 1e18 (e.g., 1.05e18)
     /// @notice Borrow buffer percentage (95% of available borrows)
-    uint256 private constant BORROW_BUFFER_BPS = 9_500; // 95% of available borrows
+    uint256 private constant _BORROW_BUFFER_BPS = 9_500; // 95% of available borrows
     /// @notice Basis points denominator
-    uint256 private constant BPS_DENOM = 10_000;
+    uint256 private constant _BPS_DENOM = 10_000;
     /// @notice WAD constant (1e18) for precision
-    uint256 private constant WAD = 1e18;
+    uint256 private constant _WAD = 1e18;
     /// @notice RAY constant (1e27) for precision
-    uint256 private constant RAY = 1e27;
+    uint256 private constant _RAY = 1e27;
 
     /// @notice The Aave V3 pool contract
-    IPool public immutable aavePool;
+    IPool public immutable AAVE_V3_POOL;
 
-    /// @notice Mapping of supported assets
-    mapping(address => bool) public isSupportedAsset;
+    /// @notice List of listed assets
+    address[] private _listedAssets;
+
+    /// @notice Asset info
+    struct AssetInfo {
+        uint32 index;
+        bool depositsEnabled;
+        bool borrowsEnabled;
+    }
+
+    /// @notice Asset -> AssetInfo
+    mapping(address => AssetInfo) private _assetInfo; // index is 1-based (0 = not listed)
 
     /// @notice User -> asset -> scaled supply balances
-    mapping(address => mapping(address => uint256)) public userScaledSupply;
+    mapping(address => mapping(address => uint256)) public userScaledSupply; // user -> asset -> scaled supply balances
     /// @notice User -> asset -> scaled borrow balances
     mapping(address => mapping(address => uint256)) public userScaledBorrow;
-
-    /// @notice Total scaled supply balances for this provider (critical for isolated accounting)
-    mapping(address => uint256) public totalScaledSupply;
-    /// @notice Total scaled borrow balances for this provider (critical for isolated accounting)
-    mapping(address => uint256) public totalScaledBorrow;
 
     /**
      * @notice Constructor for AaveV3Provider
@@ -78,7 +86,7 @@ contract AaveV3Provider is IAaveV3Provider, ReentrancyGuard, Pausable, AccessCon
      */
     constructor(address _aavePool) {
         if (_aavePool == address(0)) revert ZeroAddressNotAllowed();
-        aavePool = IPool(_aavePool);
+        AAVE_V3_POOL = IPool(_aavePool);
 
         address deployer = msg.sender;
 
@@ -138,15 +146,82 @@ contract AaveV3Provider is IAaveV3Provider, ReentrancyGuard, Pausable, AccessCon
     }
 
     /**
-     * @notice Enable or disable support for an asset
-     * @param asset The asset address to configure
-     * @param supported Whether the asset should be supported
+     * @notice List an asset for risk accounting and configure enable flags.
+     * @param asset The asset to list
+     * @param enableDeposits Whether to enable deposits for the asset
+     * @param enableBorrows Whether to enable borrows for the asset
      * @dev Only callable by admin role
      */
-    function setAssetSupported(address asset, bool supported) external onlyAdmin {
+    function setAssetSupported(address asset, bool enableDeposits, bool enableBorrows) external onlyAdmin {
         if (asset == address(0)) revert ZeroAddressNotAllowed();
-        isSupportedAsset[asset] = supported;
-        emit AssetSupportUpdated(asset, supported);
+        if (_assetInfo[asset].index == 0) {
+            _listedAssets.push(asset);
+            _assetInfo[asset].index = uint32(_listedAssets.length); // 1-based
+            emit AssetListed(asset);
+        }
+        _assetInfo[asset].depositsEnabled = enableDeposits;
+        _assetInfo[asset].borrowsEnabled = enableBorrows;
+
+        emit AssetSupportUpdated(asset, enableDeposits, enableBorrows);
+    }
+
+    /**
+     * @notice Enable or disable deposits for an asset
+     * @param asset The asset to enable or disable deposits for
+     * @param enabled Whether to enable or disable deposits
+     * @dev Only callable by admin role
+     */
+    function setDepositsEnabled(address asset, bool enabled) external onlyAdmin {
+        if (_assetInfo[asset].index == 0) revert AssetNotSupported();
+        _assetInfo[asset].depositsEnabled = enabled;
+        emit AssetSupportUpdated(asset, enabled, _assetInfo[asset].borrowsEnabled);
+    }
+
+    /**
+     * @notice Enable or disable borrows for an asset
+     * @param asset The asset to enable or disable borrows for
+     * @param enabled Whether to enable or disable borrows
+     * @dev Only callable by admin role
+     */
+    function setBorrowsEnabled(address asset, bool enabled) external onlyAdmin {
+        if (_assetInfo[asset].index == 0) revert AssetNotSupported();
+        _assetInfo[asset].borrowsEnabled = enabled;
+        emit AssetSupportUpdated(asset, _assetInfo[asset].depositsEnabled, enabled);
+    }
+
+    /**
+     * @notice Check if an asset is supported
+     * @param asset The asset to check
+     * @return True if the asset is supported, false otherwise
+     */
+    function isAssetSupported(address asset) public view returns (bool) {
+        return _assetInfo[asset].index != 0;
+    }
+
+    /**
+     * @notice Check if deposits are enabled for an asset
+     * @param asset The asset to check
+     * @return True if deposits are enabled, false otherwise
+     */
+    function depositsEnabled(address asset) public view returns (bool) {
+        return _assetInfo[asset].depositsEnabled;
+    }
+
+    /**
+     * @notice Check if borrows are enabled for an asset
+     * @param asset The asset to check
+     * @return True if borrows are enabled, false otherwise
+     */
+    function borrowsEnabled(address asset) public view returns (bool) {
+        return _assetInfo[asset].borrowsEnabled;
+    }
+
+    /**
+     * @notice Get the list of listed assets
+     * @return The list of listed assets
+     */
+    function getListedAssets() external view returns (address[] memory) {
+        return _listedAssets;
     }
 
     /**
@@ -157,7 +232,7 @@ contract AaveV3Provider is IAaveV3Provider, ReentrancyGuard, Pausable, AccessCon
      *      The user receives scaled units representing their proportional share
      */
     function deposit(address asset, uint256 amount) external whenNotPaused nonReentrant {
-        if (!isSupportedAsset[asset]) revert AssetNotSupported();
+        if (!isAssetSupported(asset) || !depositsEnabled(asset)) revert AssetNotSupported();
         if (amount == 0) revert AmountZero();
 
         address aToken = _getAToken(asset);
@@ -165,13 +240,12 @@ contract AaveV3Provider is IAaveV3Provider, ReentrancyGuard, Pausable, AccessCon
 
         IERC20 token = IERC20(asset);
         token.safeTransferFrom(msg.sender, address(this), amount);
-        _approveExact(token, address(aavePool), amount);
-        aavePool.supply(asset, amount, address(this), 0);
-        _clearApproval(token, address(aavePool));
+        _approveExact(token, address(AAVE_V3_POOL), amount);
+        AAVE_V3_POOL.supply(asset, amount, address(this), 0);
+        _clearApproval(token, address(AAVE_V3_POOL));
 
         uint256 scaledDelta = IAToken(aToken).scaledBalanceOf(address(this)) - scaledBefore;
         userScaledSupply[msg.sender][asset] += scaledDelta;
-        totalScaledSupply[asset] += scaledDelta;
 
         emit Deposit(msg.sender, asset, amount, scaledDelta);
     }
@@ -185,7 +259,7 @@ contract AaveV3Provider is IAaveV3Provider, ReentrancyGuard, Pausable, AccessCon
      *      Interest is automatically included in the withdrawal
      */
     function withdraw(address asset, uint256 amount) public whenNotPaused nonReentrant returns (uint256 actualAmount) {
-        if (!isSupportedAsset[asset]) revert AssetNotSupported();
+        if (!isAssetSupported(asset)) revert AssetNotSupported();
         if (amount == 0) revert AmountZero();
 
         uint256 userScaled = userScaledSupply[msg.sender][asset];
@@ -194,16 +268,17 @@ contract AaveV3Provider is IAaveV3Provider, ReentrancyGuard, Pausable, AccessCon
         uint256 max = getUserSupplyBalance(msg.sender, asset);
         if (amount > max) revert AmountExceedsMaxWithdrawable();
 
+        // Per-user HF check
+        _precheckUserWithdraw(msg.sender, asset, amount);
+
         address aToken = _getAToken(asset);
         uint256 scaledBefore = IAToken(aToken).scaledBalanceOf(address(this));
 
-        actualAmount = aavePool.withdraw(asset, amount, msg.sender);
+        actualAmount = AAVE_V3_POOL.withdraw(asset, amount, msg.sender);
 
         uint256 scaledBurn = scaledBefore - IAToken(aToken).scaledBalanceOf(address(this));
         if (scaledBurn > userScaled) scaledBurn = userScaled; // rounding safety
-
         userScaledSupply[msg.sender][asset] = userScaled - scaledBurn;
-        totalScaledSupply[asset] -= scaledBurn;
 
         emit Withdraw(msg.sender, asset, actualAmount, scaledBurn);
     }
@@ -228,20 +303,20 @@ contract AaveV3Provider is IAaveV3Provider, ReentrancyGuard, Pausable, AccessCon
      *      The borrowed amount is transferred to the caller
      */
     function borrow(address asset, uint256 amount) external whenNotPaused nonReentrant {
-        if (!isSupportedAsset[asset]) revert AssetNotSupported();
+        if (!isAssetSupported(asset) || !borrowsEnabled(asset)) revert AssetNotSupported();
         if (amount == 0) revert AmountZero();
 
-        _precheckContractBorrow(asset, amount);
+        // Per-user borrow gate
+        _precheckUserBorrow(msg.sender, asset, amount);
 
         address debt = _getDebtToken(asset);
         uint256 scaledBefore = IVariableDebtToken(debt).scaledBalanceOf(address(this));
 
-        aavePool.borrow(asset, amount, VARIABLE_RATE, 0, address(this));
+        AAVE_V3_POOL.borrow(asset, amount, _VARIABLE_RATE, 0, address(this));
         IERC20(asset).safeTransfer(msg.sender, amount);
 
         uint256 scaledDelta = IVariableDebtToken(debt).scaledBalanceOf(address(this)) - scaledBefore;
         userScaledBorrow[msg.sender][asset] += scaledDelta;
-        totalScaledBorrow[asset] += scaledDelta; // Track our own totals
 
         emit Borrow(msg.sender, asset, amount, scaledDelta);
     }
@@ -256,7 +331,7 @@ contract AaveV3Provider is IAaveV3Provider, ReentrancyGuard, Pausable, AccessCon
      *      Any over-provisioned amount is refunded to the caller
      */
     function repay(address asset, uint256 amount) public whenNotPaused nonReentrant returns (uint256 actualRepaid) {
-        if (!isSupportedAsset[asset]) revert AssetNotSupported();
+        if (!isAssetSupported(asset)) revert AssetNotSupported();
         if (amount == 0) revert AmountZero();
 
         uint256 userScaled = userScaledBorrow[msg.sender][asset];
@@ -274,9 +349,9 @@ contract AaveV3Provider is IAaveV3Provider, ReentrancyGuard, Pausable, AccessCon
         uint256 scaledBefore = IVariableDebtToken(debt).scaledBalanceOf(address(this));
 
         // Approve -> repay -> clear
-        _approveExact(IERC20(asset), address(aavePool), amount);
-        actualRepaid = aavePool.repay(asset, amount, VARIABLE_RATE, address(this));
-        _clearApproval(IERC20(asset), address(aavePool));
+        _approveExact(IERC20(asset), address(AAVE_V3_POOL), amount);
+        actualRepaid = AAVE_V3_POOL.repay(asset, amount, _VARIABLE_RATE, address(this));
+        _clearApproval(IERC20(asset), address(AAVE_V3_POOL));
 
         // Refund any over-provision
         if (amount > actualRepaid) {
@@ -286,9 +361,7 @@ contract AaveV3Provider is IAaveV3Provider, ReentrancyGuard, Pausable, AccessCon
         // Attribute scaled burn
         uint256 scaledDelta = scaledBefore - IVariableDebtToken(debt).scaledBalanceOf(address(this));
         if (scaledDelta > userScaled) scaledDelta = userScaled;
-
         userScaledBorrow[msg.sender][asset] = userScaled - scaledDelta;
-        totalScaledBorrow[asset] -= scaledDelta; // Track our own totals
 
         emit Repay(msg.sender, asset, actualRepaid, scaledDelta);
     }
@@ -319,9 +392,8 @@ contract AaveV3Provider is IAaveV3Provider, ReentrancyGuard, Pausable, AccessCon
     function getUserSupplyBalance(address user, address asset) public view returns (uint256) {
         uint256 userScaled = userScaledSupply[user][asset];
         if (userScaled == 0) return 0;
-
-        uint256 li = aavePool.getReserveNormalizedIncome(asset);
-        return (userScaled * li) / RAY;
+        uint256 li = AAVE_V3_POOL.getReserveNormalizedIncome(asset);
+        return (userScaled * li) / _RAY;
     }
 
     /**
@@ -335,9 +407,8 @@ contract AaveV3Provider is IAaveV3Provider, ReentrancyGuard, Pausable, AccessCon
     function getUserBorrowBalance(address user, address asset) public view returns (uint256) {
         uint256 userScaled = userScaledBorrow[user][asset];
         if (userScaled == 0) return 0;
-
-        uint256 di = aavePool.getReserveNormalizedVariableDebt(asset);
-        return (userScaled * di) / RAY;
+        uint256 di = AAVE_V3_POOL.getReserveNormalizedVariableDebt(asset);
+        return (userScaled * di) / _RAY;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -351,7 +422,7 @@ contract AaveV3Provider is IAaveV3Provider, ReentrancyGuard, Pausable, AccessCon
      * @dev Reverts if the asset is not supported by Aave
      */
     function _getAToken(address asset) internal view returns (address) {
-        DataTypes.ReserveData memory d = aavePool.getReserveData(asset);
+        DataTypes.ReserveData memory d = AAVE_V3_POOL.getReserveData(asset);
         if (d.aTokenAddress == address(0)) revert ATokenAddressZero();
         return d.aTokenAddress;
     }
@@ -363,7 +434,7 @@ contract AaveV3Provider is IAaveV3Provider, ReentrancyGuard, Pausable, AccessCon
      * @dev Reverts if the asset is not supported by Aave
      */
     function _getDebtToken(address asset) internal view returns (address) {
-        DataTypes.ReserveData memory d = aavePool.getReserveData(asset);
+        DataTypes.ReserveData memory d = AAVE_V3_POOL.getReserveData(asset);
         if (d.variableDebtTokenAddress == address(0)) revert DebtTokenAddressZero();
         return d.variableDebtTokenAddress;
     }
@@ -399,8 +470,9 @@ contract AaveV3Provider is IAaveV3Provider, ReentrancyGuard, Pausable, AccessCon
     }
 
     /**
-     * @notice Pre-check contract borrow to ensure health factor remains safe
-     * @param asset The asset to borrow
+     * @notice Pre-check user borrow to ensure health factor remains safe
+     * @param user The user to check
+     * @param borrowAsset The asset to borrow
      * @param amount The amount to borrow
      * @dev Performs comprehensive checks:
      *      - Current health factor > 1.0
@@ -408,29 +480,131 @@ contract AaveV3Provider is IAaveV3Provider, ReentrancyGuard, Pausable, AccessCon
      *      - Post-borrow health factor > 1.0
      *      This prevents the contract from becoming liquidatable
      */
-    function _precheckContractBorrow(address asset, uint256 amount) internal view {
-        (
-            uint256 totalColBase,
-            uint256 totalDebtBase,
-            uint256 availableBorrowsBase,
-            uint256 liqThresholdBps, // e.g. 8250 for 82.5%
-            , // ltv
-            uint256 hf
-        ) = aavePool.getUserAccountData(address(this));
+    function _precheckUserBorrow(address user, address borrowAsset, uint256 amount) internal view {
+        // Per user risk snapshot
+        (uint256 collAdjBase, uint256 collLtvBase, uint256 debtBase) = _userRisk(user);
 
-        if (hf <= MIN_HF) revert ContractHealthFactorBelowOne();
+        // Current per-user HF (only meaningful if user already has debt)
+        if (debtBase > 0) {
+            uint256 hf = (collAdjBase * _WAD) / debtBase;
+            if (hf <= _MIN_HF) revert UserHealthFactorBelowMin();
+        }
 
-        IAaveOracle oracle = IAaveOracle(aavePool.ADDRESSES_PROVIDER().getPriceOracle());
-        uint256 priceBase = oracle.getAssetPrice(asset); // base currency per 1 unit of asset
+        IAaveOracle oracle = IAaveOracle(AAVE_V3_POOL.ADDRESSES_PROVIDER().getPriceOracle());
+        uint256 priceBase = oracle.getAssetPrice(borrowAsset);
+        uint8 dec = IERC20Detailed(borrowAsset).decimals();
+        uint256 addDebtBase = amount * priceBase / (10 ** dec);
+
+        // LTV capacity with buffer
+        uint256 roomBase = collLtvBase > debtBase ? (collLtvBase - debtBase) : 0;
+        if (addDebtBase > (roomBase * _BORROW_BUFFER_BPS) / _BPS_DENOM) revert ExceedsUserLTVCapacity();
+
+        // Post-borrow per-user HF (LT-based safety)
+        uint256 hfPrime = (collAdjBase * _WAD) / (debtBase + addDebtBase);
+        if (hfPrime <= _MIN_HF) revert PostHealthFactorBelowOne();
+    }
+
+    /**
+     * @notice Pre-check user withdraw to ensure health factor remains safe
+     * @param user The user to check
+     * @param asset The asset to withdraw
+     * @param amount The amount to withdraw
+     * @dev Performs comprehensive checks:
+     *      - Current health factor > 1.0
+     *      - Withdraw amount within available capacity (95% buffer)
+     *      - Post-withdraw health factor > 1.0
+     *      This prevents the contract from becoming liquidatable
+     */
+    function _precheckUserWithdraw(address user, address asset, uint256 amount) internal view {
+        // Per user risk snapshot
+        (uint256 collAdjBase,, uint256 debtBase) = _userRisk(user);
+        if (debtBase == 0) return; // no personal debt => no per-user HF risk
+
+        // Enforce current per-user HF
+        uint256 currentHf = (collAdjBase * _WAD) / debtBase;
+        if (currentHf <= _MIN_HF) revert UserHealthFactorBelowMin();
+
+        IAaveOracle oracle = IAaveOracle(AAVE_V3_POOL.ADDRESSES_PROVIDER().getPriceOracle());
+        uint256 priceBase = oracle.getAssetPrice(asset);
         uint8 dec = IERC20Detailed(asset).decimals();
-        uint256 borrowValueBase = amount * priceBase / (10 ** dec);
+        DataTypes.ReserveConfigurationMap memory cfg = AAVE_V3_POOL.getConfiguration(asset);
+        uint256 ltBps = cfg.getLiquidationThreshold();
 
-        // keep a buffer of available borrows (e.g. 95%)
-        if (borrowValueBase > (availableBorrowsBase * BORROW_BUFFER_BPS) / BPS_DENOM) revert ExceedsAvailableBorrow();
+        // Value of the withdrawal in base currency
+        uint256 wBase = amount * priceBase / (10 ** dec);
 
-        // simulate post-borrow HF: HF' = (collateral * LT) / (debt + newBorrow)
-        uint256 colAdj = (totalColBase * liqThresholdBps) / BPS_DENOM;
-        uint256 hfPrime = (colAdj * WAD) / (totalDebtBase + borrowValueBase);
-        if (hfPrime <= MIN_HF) revert PostHealthFactorBelowOne();
+        // Reduce user's LT-adjusted collateral by the portion removed
+        uint256 delta = (wBase * ltBps) / _BPS_DENOM;
+        if (delta >= collAdjBase) revert WithdrawLTExceedsUserCollateral();
+        uint256 collAdjPrime = collAdjBase - delta;
+
+        // Enforce post-withdraw per-user HF
+        uint256 hfPrime = (collAdjPrime * _WAD) / debtBase;
+        if (hfPrime <= _MIN_HF) revert PostHealthFactorBelowOne();
+    }
+
+    /**
+     * @notice Calculate risk contributions for a user
+     * @param user The user to calculate risk for
+     * @return collAdjBase The total collateral adjustment
+     * @return collLtvBase The total collateral LTV
+     * @return debtBase The total debt
+     */
+    function _userRisk(address user)
+        internal
+        view
+        returns (uint256 collAdjBase, uint256 collLtvBase, uint256 debtBase)
+    {
+        IAaveOracle oracle = IAaveOracle(AAVE_V3_POOL.ADDRESSES_PROVIDER().getPriceOracle());
+        address[] memory assets = _listedAssets;
+        for (uint256 i = 0; i < assets.length;) {
+            (uint256 a, uint256 l, uint256 d) = _perAssetRisk(user, assets[i], oracle);
+            collAdjBase += a;
+            collLtvBase += l;
+            debtBase += d;
+
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    /**
+     * @notice Calculate risk contributions for a single asset
+     * @param user The user to calculate risk for
+     * @param asset The asset to calculate risk for
+     * @param oracle The Aave Oracle contract
+     * @return collAdjAdd The "safe" collateral value that counts toward preventing liquidation
+     * @return collLtvAdd The maximum debt value that can be borrowed against this collateral
+     * @return debtAdd The additional debt
+     */
+    function _perAssetRisk(address user, address asset, IAaveOracle oracle)
+        internal
+        view
+        returns (uint256 collAdjAdd, uint256 collLtvAdd, uint256 debtAdd)
+    {
+        uint256 supplyScaled = userScaledSupply[user][asset];
+        uint256 borrowScaled = userScaledBorrow[user][asset];
+        if (supplyScaled == 0 && borrowScaled == 0) return (0, 0, 0);
+
+        // cache shared values once
+        DataTypes.ReserveConfigurationMap memory cfg = AAVE_V3_POOL.getConfiguration(asset);
+        uint256 ltBps = cfg.getLiquidationThreshold();
+        uint256 ltvBps = cfg.getLtv();
+        uint256 price = oracle.getAssetPrice(asset);
+        uint8 dec = IERC20Detailed(asset).decimals();
+
+        if (supplyScaled != 0) {
+            uint256 li = AAVE_V3_POOL.getReserveNormalizedIncome(asset);
+            uint256 supplyUnderlying = (supplyScaled * li) / _RAY;
+            uint256 valueBase = (supplyUnderlying * price) / (10 ** dec);
+            collAdjAdd = (valueBase * ltBps) / _BPS_DENOM;
+            collLtvAdd = (valueBase * ltvBps) / _BPS_DENOM;
+        }
+        if (borrowScaled != 0) {
+            uint256 di = AAVE_V3_POOL.getReserveNormalizedVariableDebt(asset);
+            uint256 debtUnderlying = (borrowScaled * di) / _RAY;
+            debtAdd = (debtUnderlying * price) / (10 ** dec);
+        }
     }
 }

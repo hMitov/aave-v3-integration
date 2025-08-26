@@ -5,13 +5,16 @@
 This repository implements a comprehensive Aave V3 lending and borrowing solution that provides a simplified interface for users to interact with Aave's lending protocol. The system handles deposits, withdrawals, borrows, and repayments with automatic interest accrual and health factor management.
 
 **Key Features:**
-- **Deposit and withdraw** assets with automatic interest accrual via liquidity index
-- **Borrow and repay** assets with health factor validation and debt index tracking
-- **Multi-user support** with individual balance tracking and scaled balance management
-- **Health factor monitoring** and borrow capacity validation
-- **Pausable operations** with role-based access control
-- **Comprehensive testing** with 51+ unit tests and integration tests
-- **Mock contracts** for development and testing environments
+- **Supply Operations**: Deposit and withdraw assets with automatic interest accrual via liquidity index
+- **Borrow Operations**: Borrow and repay assets with health factor validation and debt index tracking
+- **Multi-User Support**: Individual balance tracking and scaled balance management for each user
+- **Risk Management**: Comprehensive health factor monitoring, LTV validation, and borrow capacity checks
+- **Access Control**: Role-based permissions with emergency pause functionality
+- **Asset Management**: Dynamic asset whitelist with configurable deposit and borrow enablement
+- **Interest Accrual**: Automatic interest calculation using Aave's liquidity and debt indices
+- **Security Features**: Reentrancy protection, approval management, and comprehensive validation
+- **Testing Suite**: 51+ unit tests, integration tests, and comprehensive mock contracts
+- **Gas Optimization**: Efficient approval management and balance updates
 
 **Interest Accrual:**
 - **Supply Balances:** Automatically accrue interest via Aave's liquidity index mechanism
@@ -28,13 +31,17 @@ User → AaveV3Provider → Aave V3 Pool
 ```
 
 **Core Components:**
-- `_getAToken`: Retrieves aToken for supply operations
-- `_getDebtToken`: Retrieves debt token for borrow operations
-- `_approveExact`: Manages token approvals with reset to 0
-- `_clearApproval`: Clears approvals after operations
-- `_precheckContractBorrow`: Validates health factor and borrow capacity
-- `getUserSupplyBalance`: Calculates user's supply balance with interest
-- `getUserBorrowBalance`: Calculates user's borrow balance with interest
+- `_getAToken`: Retrieves aToken address for supply operations
+- `_getDebtToken`: Retrieves debt token address for borrow operations
+- `_approveExact`: Manages token approvals with reset to 0 for USDT compatibility
+- `_clearApproval`: Clears approvals after operations for security
+- `_precheckUserBorrow`: Validates user's borrow capacity and health factor
+- `_precheckUserWithdraw`: Validates user's withdrawal capacity and health factor
+- `_userRisk`: Calculates user's aggregated risk metrics across all assets
+- `_perAssetRisk`: Calculates per-asset risk metrics for specific operations
+- `getUserSupplyBalance`: Calculates user's supply balance with accrued interest
+- `getUserBorrowBalance`: Calculates user's borrow balance with accrued interest
+- `_calculateHealthFactor`: Internal health factor calculation for risk validation
 
 ## Contracts
 
@@ -52,58 +59,122 @@ User → AaveV3Provider → Aave V3 Pool
 - `totalScaledSupply`: Total scaled supply balances for the provider
 - `totalScaledBorrow`: Total scaled borrow balances for the provider
 
-**APIs:**
-- `deposit(asset, amount)`: Deposit assets to Aave V3
-- `withdraw(asset, amount)`: Withdraw assets from Aave V3
-- `withdrawAll(asset)`: Withdraw all user's supply for an asset
-- `borrow(asset, amount)`: Borrow assets from Aave V3
-- `repay(asset, amount)`: Repay borrowed assets
-- `repayAll(asset)`: Repay all user's debt for an asset
-- `getUserSupplyBalance(user, asset)`: Get user's supply balance with interest
-- `getUserBorrowBalance(user, asset)`: Get user's borrow balance with interest
-- `setAssetSupported(asset, supported)`: Enable/disable asset support
-- `grantPauserRole(account)`: Grant pauser role to account
-- `revokePauserRole(account)`: Revoke pauser role from account
-- `pause()`: Pause all operations
+**Core Functions:**
+
+**Supply Operations:**
+- `deposit(asset, amount)`: Deposit assets to Aave V3 with automatic interest accrual
+- `withdraw(asset, amount)`: Withdraw assets from Aave V3 (partial or full)
+- `withdrawAll(asset)`: Withdraw all user's supply for a specific asset
+- `getUserSupplyBalance(user, asset)`: Get user's supply balance including accrued interest
+
+**Borrow Operations:**
+- `borrow(asset, amount)`: Borrow assets from Aave V3 with health factor validation
+- `repay(asset, amount)`: Repay borrowed assets (partial or full)
+- `repayAll(asset)`: Repay all user's debt for a specific asset
+- `getUserBorrowBalance(user, asset)`: Get user's borrow balance including accrued interest
+
+**Asset Management:**
+- `setAssetSupported(asset, depositsEnabled, borrowsEnabled)`: Enable/disable asset support for deposits and/or borrows
+- `isAssetSupported(asset)`: Check if an asset is supported
+- `depositsEnabled(asset)`: Check if deposits are enabled for an asset
+- `borrowsEnabled(asset)`: Check if borrows are enabled for an asset
+- `getListedAssets()`: Get the list of all supported assets
+
+**User Management:**
+- `userScaledSupply(user, asset)`: Get user's scaled supply balance for an asset
+- `userScaledBorrow(user, asset)`: Get user's scaled borrow balance for an asset
+- `totalScaledSupply(asset)`: Get total scaled supply balance for an asset
+- `totalScaledBorrow(asset)`: Get total scaled borrow balance for an asset
+
+**Access Control:**
+- `grantPauserRole(account)`: Grant pauser role to an account
+- `revokePauserRole(account)`: Revoke pauser role from an account
+- `pause()`: Pause all operations (emergency stop)
 - `unpause()`: Unpause all operations
+- `paused()`: Check if contract is paused
+
+**Health Factor & Risk Management:**
+- `_precheckUserBorrow(user, asset, amount)`: Validate user's borrow capacity and health factor
+- `_precheckUserWithdraw(user, asset, amount)`: Validate user's withdrawal capacity and health factor
+- `_userRisk(user)`: Calculate user's aggregated risk metrics
+- `_perAssetRisk(user, asset)`: Calculate per-asset risk metrics
 
 **Safety Features:**
-- Reentrancy protection
-- Approval reset to 0
-- Health factor validation
-- Borrow capacity checks
-- Pausable operations
-- Asset support validation
+- **Reentrancy Protection**: `nonReentrant` modifier on all external functions
+- **Approval Management**: Automatic approval reset to 0 for USDT compatibility
+- **Health Factor Validation**: Pre and post-operation health factor checks
+- **Borrow Capacity Checks**: Validation against available borrow capacity
+- **Pausable Operations**: Emergency pause functionality with role-based access
+- **Asset Support Validation**: Comprehensive asset whitelist management
+- **Input Validation**: Zero address and amount validation
+- **State Validation**: User balance and debt validation before operations
+- **Risk Management**: Liquidation threshold and LTV capacity validation
+- **Gas Optimization**: Efficient approval management and balance updates
 
 **Events:**
-- `AssetSupportUpdated`: Emitted when asset support is toggled
-- `Deposit`: Emitted when user deposits assets
-- `Withdraw`: Emitted when user withdraws assets
-- `Borrow`: Emitted when user borrows assets
-- `Repay`: Emitted when user repays debt
+- `AssetListed`: Emitted when a new asset is added to the supported list
+- `AssetSupportUpdated`: Emitted when asset support settings are updated
+- `Deposit`: Emitted when user deposits assets (includes scaled delta)
+- `Withdraw`: Emitted when user withdraws assets (includes scaled burn amount)
+- `Borrow`: Emitted when user borrows assets (includes scaled debt delta)
+- `Repay`: Emitted when user repays debt (includes scaled debt burn)
+- `RoleGranted`: Emitted when roles are granted to accounts
+- `RoleRevoked`: Emitted when roles are revoked from accounts
+- `RoleAdminChanged`: Emitted when role admin is changed
+- `Paused`: Emitted when contract is paused
+- `Unpaused`: Emitted when contract is unpaused
 
 **Error Handling:**
-- `CallerIsNotAdmin`: Access control validation
-- `CallerIsNotPauser`: Pauser role validation
-- `ZeroAddressNotAllowed`: Address validation
-- `AssetNotSupported`: Asset support validation
-- `AmountZero`: Amount validation
-- `UserScaledIsZero`: Balance validation
-- `NoDebt`: Debt existence validation
-- `AmountExceedsMaxWithdrawable`: Withdrawal limit validation
-- `AmountExceedsMaxRepayable`: Repayment limit validation
-- `ATokenAddressZero`: aToken address validation
-- `DebtTokenAddressZero`: Debt token address validation
-- `ContractHealthFactorBelowOne`: Health factor validation
-- `ExceedsAvailableBorrow`: Borrow capacity validation
-- `PostHealthFactorBelowOne`: Post-borrow health factor validation
+The contract includes comprehensive error handling with custom error types for better gas efficiency and debugging:
+
+**Access Control Errors:**
+- `CallerIsNotAdmin`: Thrown when non-admin users try to call admin-only functions
+- `CallerIsNotPauser`: Thrown when non-pauser users try to call pause-related functions
+
+**Input Validation Errors:**
+- `ZeroAddressNotAllowed`: Thrown when functions receive `address(0)` as a parameter
+- `AssetNotSupported`: Thrown when trying to use an asset not in the supported list
+- `AmountZero`: Thrown when trying to deposit, withdraw, borrow, or repay 0 amount
+
+**State Validation Errors:**
+- `UserScaledIsZero`: Thrown when user has no scaled supply/debt for an asset
+- `AmountExceedsMaxWithdrawable`: Thrown when withdrawal exceeds user's available balance
+- `AmountExceedsMaxRepayable`: Thrown when repayment exceeds user's debt amount
+
+**Aave Integration Errors:**
+- `ATokenAddressZero`: Thrown when Aave returns `address(0)` for aToken
+- `DebtTokenAddressZero`: Thrown when Aave returns `address(0)` for debt token
+
+**Risk Management Errors:**
+- `UserHealthFactorBelowMin`: Thrown when user's health factor is below minimum threshold
+- `ExceedsUserLTVCapacity`: Thrown when borrowing would exceed Loan-to-Value ratio limit
+- `WithdrawLTExceedsUserCollateral`: Thrown when withdrawal would make liquidation threshold exceed collateral
+- `PostHealthFactorBelowOne`: Thrown when an action would make user's health factor drop below 1.0
+
+**Error Usage Examples:**
+```solidity
+// Test for AssetNotSupported error
+vm.expectRevert(IAaveV3Provider.AssetNotSupported.selector);
+provider.deposit(unsupportedAsset, amount);
+
+// Test for AmountZero error
+vm.expectRevert(IAaveV3Provider.AmountZero.selector);
+provider.deposit(asset, 0);
+
+// Test for UserScaledIsZero error
+vm.expectRevert(IAaveV3Provider.UserScaledIsZero.selector);
+provider.withdraw(asset, amount);
+```
 
 **Configuration Constants:**
-- `MIN_HF`: Minimum health factor threshold (1.00 in WAD)
-- `BORROW_BUFFER_BPS`: Borrow buffer percentage (95% of available borrows)
-- `BPS_DENOM`: Basis points denominator (10,000)
-- `WAD`: Precision constant (1e18)
-- `VARIABLE_RATE`: Aave variable rate mode constant (2)
+- `_MIN_HF`: Minimum health factor threshold (1.00 in WAD format)
+- `_BORROW_BUFFER_BPS`: Borrow buffer percentage (95% of available borrows)
+- `_BPS_DENOM`: Basis points denominator (10,000)
+- `_WAD`: Precision constant (1e18)
+- `_RAY`: Aave precision constant (1e27)
+- `_VARIABLE_RATE`: Aave variable rate mode constant (2)
+- `AAVE_V3_POOL`: Immutable Aave V3 Pool contract address
+- `ADDRESSES_PROVIDER`: Immutable Aave addresses provider contract address
 
 ### Mock Contracts
 
@@ -117,11 +188,32 @@ User → AaveV3Provider → Aave V3 Pool
 - **MockAddressesProvider:** Simulates Aave addresses provider for price oracle access
 
 **Mock Features:**
-- **Health Factor Simulation:** Configurable health factor values for testing
-- **Borrow Capacity:** Mock available borrows for capacity testing
-- **Reserve Data:** Complete reserve data structure with configurable indices
-- **Token Management:** Setter functions for configuring mock token addresses
+- **Health Factor Simulation:** Configurable health factor values for testing risk scenarios
+- **Borrow Capacity:** Mock available borrows for capacity testing and validation
+- **Reserve Data:** Complete reserve data structure with configurable liquidity and debt indices
+- **Token Management:** Setter functions for configuring mock token addresses and balances
 - **Balance Tracking:** Scaled balance management for supply and borrow operations
+- **Interest Simulation:** Configurable liquidity index and debt index for interest accrual testing
+- **Pool Integration:** Simulates Aave V3 Pool interface for comprehensive testing
+- **Price Oracle:** Mock price oracle for asset price simulation
+- **Configuration Management:** Dynamic asset support and borrow enablement testing
+
+## Internal Functions & Risk Management
+
+**Risk Validation Functions:**
+- `_precheckUserBorrow(user, asset, amount)`: Validates user's borrow capacity, health factor, and post-borrow risk
+- `_precheckUserWithdraw(user, asset, amount)`: Validates user's withdrawal capacity and post-withdrawal health factor
+- `_userRisk(user)`: Aggregates user's total collateral and debt across all assets for risk assessment
+- `_perAssetRisk(user, asset)`: Calculates per-asset risk metrics including LTV and liquidation threshold
+- `_calculateHealthFactor(collateral, debt)`: Internal health factor calculation using price oracle data
+
+**Approval Management:**
+- `_approveExact(token, spender, amount)`: Manages token approvals with reset to 0 for USDT compatibility
+- `_clearApproval(token, spender)`: Clears approvals after operations for security
+
+**Aave Integration Helpers:**
+- `_getAToken(asset)`: Retrieves aToken address from Aave V3 Pool
+- `_getDebtToken(asset)`: Retrieves debt token address from Aave V3 Pool
 
 ## Interest Accrual & Scaled Balances
 
@@ -148,6 +240,25 @@ Actual Debt = Scaled Debt × Debt Index ÷ 1e27
 - **External users** → Change Aave's global liquidity/borrow indexes
 - **Your provider** → Gets updated balances via those indexes
 - **Your users** → Get their proportional share of your provider's updated balances
+
+## Role System & Access Control
+
+**Role Hierarchy:**
+- `DEFAULT_ADMIN_ROLE`: Super admin with ability to grant/revoke all roles
+- `ADMIN_ROLE`: Administrative functions like asset management and role management
+- `PAUSER_ROLE`: Emergency pause functionality for security incidents
+
+**Role Management:**
+- `grantRole(role, account)`: Grant a specific role to an account
+- `revokeRole(role, account)`: Revoke a specific role from an account
+- `hasRole(role, account)`: Check if an account has a specific role
+- `getRoleAdmin(role)`: Get the admin role for a specific role
+
+**Security Features:**
+- **Role-based Access Control**: Granular permissions for different operations
+- **Emergency Pause**: Ability to pause all operations in emergency situations
+- **Multi-signature Support**: Compatible with Safe wallets for multi-sig operations
+- **Role Revocation**: Immediate role revocation for security incidents
 
 ## Configuration (.env)
 
@@ -195,11 +306,16 @@ forge test --match-test testDeposit -vvv
 - **Branch Coverage:** High coverage of conditional logic and edge cases
 
 **Test Categories:**
-- **Core Operations:** Deposit, withdraw, borrow, repay
-- **Interest Accrual:** Liquidity index and debt index calculations
-- **Health Factor:** Borrow capacity and health factor validation
-- **Access Control:** Role management and pausing functionality
-- **Edge Cases:** Zero amounts, unsupported assets, paused operations
+- **Core Operations:** Deposit, withdraw, borrow, repay with comprehensive validation
+- **Interest Accrual:** Liquidity index and debt index calculations with precision testing
+- **Health Factor:** Borrow capacity and health factor validation with risk scenarios
+- **Access Control:** Role management and pausing functionality with security testing
+- **Edge Cases:** Zero amounts, unsupported assets, paused operations, and error conditions
+- **Multi-User Scenarios:** Concurrent operations and balance isolation testing
+- **Interest Rate Scenarios:** Various interest rate environments and index calculations
+- **Risk Management:** Health factor thresholds, LTV validation, and liquidation scenarios
+- **Integration Testing:** Real Aave V3 pool integration with mainnet forking
+- **Gas Optimization:** Gas usage analysis and optimization testing
 
 **Foundry Configuration:**
 - Solidity 0.8.29 with OpenZeppelin v4.x and Aave V3 dependencies

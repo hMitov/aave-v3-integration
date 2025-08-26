@@ -24,6 +24,10 @@ contract MockPool {
     uint256 public mockAvailableBorrows = 1000e8; // Default: 1000 base units
     uint256 public mockPostBorrowHealthFactor = 1.5e18; // Default: 1.5
 
+    // Mock configuration data for testing
+    mapping(address => uint256) public mockLtv;
+    mapping(address => uint256) public mockLiquidationThreshold;
+
     /// @notice Deploys the mock and sets a simple addresses provider.
     constructor() {
         // Create a mock addresses provider with a mock price oracle
@@ -93,70 +97,70 @@ contract MockPool {
         });
     }
 
-    /// @notice Simulate supplying: pull tokens and mint scaled aTokens to `onBehalfOf`.
-    /// @dev Scaled minting here adds `amount` directly (not divided by index) for simplicity.
+    /// @notice Supply underlying asset to receive aTokens.
     /// @param asset Underlying asset.
     /// @param amount Amount to supply.
     /// @param onBehalfOf Recipient of aTokens.
-    /// @param referralCode Unused.
-    function supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode) external {
+    function supply(address asset, uint256 amount, address onBehalfOf, uint16) external {
         bool success = IERC20(asset).transferFrom(msg.sender, address(this), amount);
         require(success, "Transfer failed");
 
         address aToken = aTokens[asset];
         if (aToken != address(0)) {
-            uint256 current = MockAToken(aToken).scaledBalanceOf(onBehalfOf);
-            MockAToken(aToken).setScaledBalanceFor(onBehalfOf, current + amount);
+            // When AaveV3Provider calls this, onBehalfOf is the provider contract
+            // We need to increase the provider's scaled balance in the aToken
+            uint256 currentScaled = MockAToken(aToken).scaledBalanceOf(onBehalfOf);
+            MockAToken(aToken).setScaledBalanceFor(onBehalfOf, currentScaled + amount);
         }
     }
 
-    /// @notice Simulate withdrawing: send tokens and burn proportional scaled aTokens from caller.
+    /// @notice Withdraw underlying asset by burning aTokens.
     /// @param asset Underlying asset.
     /// @param amount Amount to withdraw.
-    /// @param to Recipient.
-    /// @return withdrawn Amount transferred.
+    /// @param to Recipient of underlying.
+    /// @return withdrawn Amount withdrawn.
     function withdraw(address asset, uint256 amount, address to) external returns (uint256 withdrawn) {
-        bool success = IERC20(asset).transfer(to, amount);
-        require(success, "Transfer failed");
-
         address aToken = aTokens[asset];
         if (aToken != address(0)) {
-            uint256 currentScaled = MockAToken(aToken).scaledBalanceOf(msg.sender);
-            uint256 currentBal = MockAToken(aToken).balanceOf(msg.sender);
-            // Burn proportionally to requested amount (mocked).
-            uint256 scaledToBurn = currentBal == 0 ? 0 : (amount * currentScaled) / currentBal;
-            if (scaledToBurn > currentScaled) scaledToBurn = currentScaled;
-            MockAToken(aToken).setScaledBalanceFor(msg.sender, currentScaled - scaledToBurn);
+            uint256 li = MockAToken(aToken).liquidityIndex();
+            uint256 scaledToBurn = (amount * 1e27) / li; // RAY = 1e27
+            
+            uint256 providerScaled = MockAToken(aToken).scaledBalanceOf(msg.sender);
+            if (providerScaled >= scaledToBurn) {
+                // Update the provider's scaled balance in the aToken
+                // This is what the AaveV3Provider expects to see change
+                MockAToken(aToken).setScaledBalanceFor(msg.sender, providerScaled - scaledToBurn);
+                
+                bool success = IERC20(asset).transfer(to, amount);
+                require(success, "Transfer failed");
+                withdrawn = amount;
+            }
         }
-        return amount;
     }
 
-    /// @notice Simulate borrowing: send tokens and mint scaled debt to `onBehalfOf`.
+    /// @notice Borrow underlying asset by minting debt tokens.
     /// @param asset Underlying asset.
     /// @param amount Amount to borrow.
-    /// @param interestRateMode Unused.
-    /// @param referralCode Unused.
     /// @param onBehalfOf Borrower to receive debt.
-    function borrow(address asset, uint256 amount, uint256 interestRateMode, uint16 referralCode, address onBehalfOf)
+    function borrow(address asset, uint256 amount, uint256, uint16, address onBehalfOf)
         external
     {
-        bool success = IERC20(asset).transfer(onBehalfOf, amount);
-        require(success, "Transfer failed");
-
         address debt = variableDebtTokens[asset];
         if (debt != address(0)) {
             uint256 current = MockVariableDebtToken(debt).scaledBalanceOf(onBehalfOf);
             MockVariableDebtToken(debt).setScaledBalanceFor(onBehalfOf, current + amount);
         }
+
+        bool success = IERC20(asset).transfer(onBehalfOf, amount);
+        require(success, "Transfer failed");
     }
 
-    /// @notice Simulate repay: pull tokens and burn scaled debt from `onBehalfOf`.
+    /// @notice Repay debt by burning debt tokens.
     /// @param asset Underlying asset.
     /// @param amount Amount to repay.
-    /// @param interestRateMode Unused.
     /// @param onBehalfOf Debtor whose position is repaid.
     /// @return repaid Amount accepted.
-    function repay(address asset, uint256 amount, uint256 interestRateMode, address onBehalfOf)
+    function repay(address asset, uint256 amount, uint256, address onBehalfOf)
         external
         returns (uint256 repaid)
     {
@@ -206,9 +210,7 @@ contract MockPool {
     }
 
     /// @notice Mock price oracle function
-    function getAssetPrice(address asset) external view returns (uint256) {
-        // Return a simple price for testing - 1 USDC = 1 base unit
-        // In a real scenario, this would be the price in base currency (e.g., USD)
+    function getAssetPrice(address) external pure returns (uint256) {
         return 1e8; // 1.0 in 8 decimals
     }
 
@@ -225,5 +227,32 @@ contract MockPool {
     /// @notice Set post-borrow health factor for testing
     function setPostBorrowHealthFactor(uint256 _postBorrowHealthFactor) external {
         mockPostBorrowHealthFactor = _postBorrowHealthFactor;
+    }
+
+    function setMockConfiguration(address asset, uint256 ltv, uint256 liquidationThreshold) external {
+        mockLtv[asset] = ltv;
+        mockLiquidationThreshold[asset] = liquidationThreshold;
+    }
+
+    function getConfiguration(address asset) external view returns (DataTypes.ReserveConfigurationMap memory) {
+        // Create a mock configuration with LTV and liquidation threshold
+        // LTV is bits 0-15, liquidation threshold is bits 16-31
+        uint256 data = 0;
+        
+        // Set LTV (bits 0-15) - default to 8000 (80%)
+        uint256 ltv = mockLtv[asset] != 0 ? mockLtv[asset] : 8000;
+        data |= (ltv << 0);
+        
+        // Set liquidation threshold (bits 16-31) - default to 8250 (82.5%)
+        uint256 lt = mockLiquidationThreshold[asset] != 0 ? mockLiquidationThreshold[asset] : 8250;
+        data |= (lt << 16);
+        
+        // Set other bits as needed for testing
+        // Bit 56: reserve is active
+        data |= (1 << 56);
+        // Bit 58: borrowing is enabled
+        data |= (1 << 58);
+        
+        return DataTypes.ReserveConfigurationMap(data);
     }
 }

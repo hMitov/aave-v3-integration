@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import "forge-std/Script.sol";
 import {EnvLoader} from "./EnvLoader.s.sol";
 import {AaveV3Provider} from "../src/AaveV3Provider.sol";
+import {console} from "forge-std/console.sol";
 
 /**
  * @title DeployAaveV3ProviderScript

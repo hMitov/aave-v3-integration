@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import "forge-std/Script.sol";
+import {Script} from "forge-std/Script.sol";
 
 /// @title EnvLoader
 /// @notice Base abstract script for loading and validating environment variables in Forge scripts

@@ -4,13 +4,8 @@ pragma solidity ^0.8.19;
 import {Test} from "forge-std/Test.sol";
 import {AaveV3Provider} from "../../src/AaveV3Provider.sol";
 import {IERC20} from "@aave/core-v3/contracts/dependencies/openzeppelin/contracts/IERC20.sol";
-import {IWETH} from "@aave/core-v3/contracts/misc/interfaces/IWETH.sol";
 import {IPool} from "@aave/core-v3/contracts/interfaces/IPool.sol";
-import {IAToken} from "@aave/core-v3/contracts/interfaces/IAToken.sol";
-import {IVariableDebtToken} from "@aave/core-v3/contracts/interfaces/IVariableDebtToken.sol";
-import {DataTypes} from "@aave/core-v3/contracts/protocol/libraries/types/DataTypes.sol";
 import {IAaveV3Provider} from "../../src/interfaces/IAaveV3Provider.sol";
-import {console} from "forge-std/console.sol";
 
 contract AaveV3ProviderIT is Test {
     // Mainnet addresses - using correct checksums
@@ -65,9 +60,9 @@ contract AaveV3ProviderIT is Test {
         provider = new AaveV3Provider(AAVE_V3_POOL);
 
         // Enable assets as supported
-        provider.setAssetSupported(USDC, true);
-        provider.setAssetSupported(WETH, true);
-        provider.setAssetSupported(DAI, true);
+        provider.setAssetSupported(USDC, true, true);
+        provider.setAssetSupported(WETH, true, true);
+        provider.setAssetSupported(DAI, true, true);
 
         // Setup test accounts with initial balances
         vm.deal(user1, 100 ether);
@@ -80,8 +75,10 @@ contract AaveV3ProviderIT is Test {
         // Check if whale has enough USDC
         uint256 whaleBalance = usdc.balanceOf(whale);
         if (whaleBalance >= INITIAL_BALANCE) {
-            usdc.transfer(user1, INITIAL_BALANCE);
-            weth.transfer(user1, 1 ether);
+            bool success = usdc.transfer(user1, INITIAL_BALANCE);
+            require(success, "Transfer failed");
+            success = weth.transfer(user1, 1 ether);
+            require(success, "Transfer failed");
         } else {
             // If whale doesn't have enough, we'll need to handle this differently
             // For now, let's skip the test if we can't get USDC
@@ -92,21 +89,21 @@ contract AaveV3ProviderIT is Test {
         vm.stopPrank();
     }
 
-    function testConstructor() public {
-        assertEq(address(provider.aavePool()), AAVE_V3_POOL, "Pool address should match");
+    function testConstructor() public view {
+        assertEq(address(provider.AAVE_V3_POOL()), AAVE_V3_POOL, "Pool address should match");
         assertTrue(provider.hasRole(provider.DEFAULT_ADMIN_ROLE(), admin), "Admin should have default admin role");
         assertTrue(provider.hasRole(provider.ADMIN_ROLE(), admin), "Admin should have admin role");
         assertTrue(provider.hasRole(provider.PAUSER_ROLE(), admin), "Admin should have pauser role");
     }
 
-    function testAssetSupport() public {
-        assertTrue(provider.isSupportedAsset(USDC), "USDC should be supported");
-        assertTrue(provider.isSupportedAsset(WETH), "WETH should be supported");
-        assertTrue(provider.isSupportedAsset(DAI), "DAI should be supported");
+    function testAssetSupport() public view {
+        assertTrue(provider.isAssetSupported(USDC), "USDC should be supported");
+        assertTrue(provider.isAssetSupported(WETH), "WETH should be supported");
+        assertTrue(provider.isAssetSupported(DAI), "DAI should be supported");
 
         // Test unsupported asset
         address unsupportedAsset = address(0x123);
-        assertFalse(provider.isSupportedAsset(unsupportedAsset), "Unsupported asset should return false");
+        assertFalse(provider.isAssetSupported(unsupportedAsset), "Unsupported asset should return false");
     }
 
     function testDeposit_USDC() public {
@@ -127,7 +124,7 @@ contract AaveV3ProviderIT is Test {
         assertEq(userSupplyAfterDeposit, DEPOSIT_AMOUNT, "User supply should be equal to deposit");
 
         // Verify scaled supply - this represents the underlying balance in Aave's internal accounting
-        uint256 liquidityIndex = provider.aavePool().getReserveData(USDC).liquidityIndex;
+        uint256 liquidityIndex = provider.AAVE_V3_POOL().getReserveData(USDC).liquidityIndex;
 
         // In Aave V3: scaledBalance = depositAmount * 1e27 / liquidityIndex
         uint256 expectedScaledSupply = (DEPOSIT_AMOUNT * 1e27) / liquidityIndex;
@@ -151,7 +148,7 @@ contract AaveV3ProviderIT is Test {
         uint256 userSupplyAfterDeposit = provider.getUserSupplyBalance(user1, USDC);
         assertEq(userSupplyAfterDeposit, DEPOSIT_AMOUNT, "User supply should equal deposit");
 
-        uint256 liquidityIndex = provider.aavePool().getReserveData(USDC).liquidityIndex;
+        uint256 liquidityIndex = provider.AAVE_V3_POOL().getReserveData(USDC).liquidityIndex;
 
         // In Aave V3: scaledBalance = depositAmount * 1e27 / liquidityIndex
         uint256 expectedScaledSupply = (DEPOSIT_AMOUNT * 1e27) / liquidityIndex;
@@ -227,7 +224,7 @@ contract AaveV3ProviderIT is Test {
         uint256 userSupplyAfterDeposit = provider.getUserSupplyBalance(user1, USDC);
         assertEq(userSupplyAfterDeposit, DEPOSIT_AMOUNT, "User supply should equal deposit");
 
-        uint256 liquidityIndex = provider.aavePool().getReserveData(USDC).liquidityIndex;
+        uint256 liquidityIndex = provider.AAVE_V3_POOL().getReserveData(USDC).liquidityIndex;
 
         // In Aave V3: scaledBalance = depositAmount * 1e27 / liquidityIndex
         uint256 expectedScaledSupply = (DEPOSIT_AMOUNT * 1e27) / liquidityIndex;
@@ -309,7 +306,7 @@ contract AaveV3ProviderIT is Test {
         uint256 userSupplyAfterDeposit = provider.getUserSupplyBalance(user1, WETH);
         assertEq(userSupplyAfterDeposit, wethAmount, "User supply should equal deposit");
 
-        uint256 liquidityIndex = provider.aavePool().getReserveData(WETH).liquidityIndex;
+        uint256 liquidityIndex = provider.AAVE_V3_POOL().getReserveData(WETH).liquidityIndex;
 
         // In Aave V3: scaledBalance = depositAmount * 1e27 / liquidityIndex
         uint256 expectedScaledSupply = (wethAmount * 1e27) / liquidityIndex;
@@ -340,7 +337,7 @@ contract AaveV3ProviderIT is Test {
         uint256 userSupplyAfterDeposit = provider.getUserSupplyBalance(user1, WETH);
         assertEq(userSupplyAfterDeposit, wethAmount, "User supply should equal deposit");
 
-        uint256 liquidityIndex = provider.aavePool().getReserveData(WETH).liquidityIndex;
+        uint256 liquidityIndex = provider.AAVE_V3_POOL().getReserveData(WETH).liquidityIndex;
 
         // In Aave V3: scaledBalance = depositAmount * 1e27 / liquidityIndex
         uint256 expectedScaledSupply = (wethAmount * 1e27) / liquidityIndex;
@@ -424,7 +421,7 @@ contract AaveV3ProviderIT is Test {
         uint256 userSupplyAfterDeposit = provider.getUserSupplyBalance(user1, WETH);
         assertEq(userSupplyAfterDeposit, wethAmount, "User supply should equal deposit");
 
-        uint256 liquidityIndex = provider.aavePool().getReserveData(WETH).liquidityIndex;
+        uint256 liquidityIndex = provider.AAVE_V3_POOL().getReserveData(WETH).liquidityIndex;
 
         // In Aave V3: scaledBalance = depositAmount * 1e27 / liquidityIndex
         uint256 expectedScaledSupply = (wethAmount * 1e27) / liquidityIndex;
@@ -473,7 +470,7 @@ contract AaveV3ProviderIT is Test {
         uint256 userSupplyAfterDeposit = provider.getUserSupplyBalance(user1, USDC);
         assertEq(userSupplyAfterDeposit, DEPOSIT_AMOUNT, "User supply should equal deposit");
 
-        uint256 liquidityIndex = provider.aavePool().getReserveData(USDC).liquidityIndex;
+        uint256 liquidityIndex = provider.AAVE_V3_POOL().getReserveData(USDC).liquidityIndex;
 
         // In Aave V3: scaledBalance = depositAmount * 1e27 / liquidityIndex
         uint256 expectedScaledSupply = (DEPOSIT_AMOUNT * 1e27) / liquidityIndex;
@@ -494,7 +491,7 @@ contract AaveV3ProviderIT is Test {
         uint256 scaledBorrowAfterBorrow = provider.userScaledBorrow(user1, USDC);
         assertGt(scaledBorrowAfterBorrow, 0, "User should have scaled borrow balance");
 
-        uint256 borrowIndex = provider.aavePool().getReserveData(USDC).variableBorrowIndex;
+        uint256 borrowIndex = provider.AAVE_V3_POOL().getReserveData(USDC).variableBorrowIndex;
 
         uint256 expectedScaledBorrow = (BORROW_AMOUNT * 1e27) / borrowIndex;
         assertApproxEqAbs(
@@ -517,7 +514,7 @@ contract AaveV3ProviderIT is Test {
         uint256 userSupplyAfterDeposit = provider.getUserSupplyBalance(user1, WETH);
         assertEq(userSupplyAfterDeposit, 1 ether, "User supply should equal deposit");
 
-        uint256 liquidityIndex = provider.aavePool().getReserveData(WETH).liquidityIndex;
+        uint256 liquidityIndex = provider.AAVE_V3_POOL().getReserveData(WETH).liquidityIndex;
 
         // In Aave V3: scaledBalance = depositAmount * 1e27 / liquidityIndex
         uint256 expectedScaledSupply = (1 ether * 1e27) / liquidityIndex;
@@ -538,7 +535,7 @@ contract AaveV3ProviderIT is Test {
         uint256 scaledBorrowAfterBorrow = provider.userScaledBorrow(user1, WETH);
         assertGt(scaledBorrowAfterBorrow, 0, "User should have scaled borrow balance");
 
-        uint256 borrowIndex = provider.aavePool().getReserveData(WETH).variableBorrowIndex;
+        uint256 borrowIndex = provider.AAVE_V3_POOL().getReserveData(WETH).variableBorrowIndex;
 
         uint256 expectedScaledBorrow = (0.5 ether * 1e27) / borrowIndex;
         assertApproxEqAbs(
@@ -562,7 +559,7 @@ contract AaveV3ProviderIT is Test {
         uint256 userSupplyAfterDeposit = provider.getUserSupplyBalance(user1, WETH);
         assertEq(userSupplyAfterDeposit, wethAmount, "User supply should equal deposit");
 
-        uint256 liquidityIndex = provider.aavePool().getReserveData(WETH).liquidityIndex;
+        uint256 liquidityIndex = provider.AAVE_V3_POOL().getReserveData(WETH).liquidityIndex;
 
         // In Aave V3: scaledBalance = depositAmount * 1e27 / liquidityIndex
         uint256 expectedScaledSupply = (wethAmount * 1e27) / liquidityIndex;
@@ -584,7 +581,7 @@ contract AaveV3ProviderIT is Test {
         uint256 scaledBorrowAfterBorrow = provider.userScaledBorrow(user1, WETH);
         assertGt(scaledBorrowAfterBorrow, 0, "User should have scaled borrow balance");
 
-        uint256 borrowIndex = provider.aavePool().getReserveData(WETH).variableBorrowIndex;
+        uint256 borrowIndex = provider.AAVE_V3_POOL().getReserveData(WETH).variableBorrowIndex;
 
         uint256 expectedScaledBorrow = (borrowAmount * 1e27) / borrowIndex;
         assertApproxEqAbs(
@@ -669,7 +666,7 @@ contract AaveV3ProviderIT is Test {
         uint256 userSupplyAfterDeposit = provider.getUserSupplyBalance(user1, USDC);
         assertEq(userSupplyAfterDeposit, usdcAmount, "User supply should equal deposit");
 
-        uint256 liquidityIndex = provider.aavePool().getReserveData(USDC).liquidityIndex;
+        uint256 liquidityIndex = provider.AAVE_V3_POOL().getReserveData(USDC).liquidityIndex;
 
         // In Aave V3: scaledBalance = depositAmount * 1e27 / liquidityIndex
         uint256 expectedScaledSupply = (usdcAmount * 1e27) / liquidityIndex;
@@ -690,7 +687,7 @@ contract AaveV3ProviderIT is Test {
         uint256 scaledBorrowAfterBorrow = provider.userScaledBorrow(user1, USDC);
         assertGt(scaledBorrowAfterBorrow, 0, "User should have scaled borrow balance");
 
-        uint256 borrowIndex = provider.aavePool().getReserveData(USDC).variableBorrowIndex;
+        uint256 borrowIndex = provider.AAVE_V3_POOL().getReserveData(USDC).variableBorrowIndex;
 
         uint256 expectedScaledBorrow = (borrowAmount * 1e27) / borrowIndex;
         assertApproxEqAbs(
@@ -774,7 +771,7 @@ contract AaveV3ProviderIT is Test {
         // This should hit the "exceeds-available-95" check
         uint256 hugeBorrowAmount = 1000 ether; // Way more than we have collateral for
 
-        vm.expectRevert(IAaveV3Provider.ExceedsAvailableBorrow.selector);
+        vm.expectRevert(IAaveV3Provider.ExceedsUserLTVCapacity.selector);
         provider.borrow(WETH, hugeBorrowAmount);
 
         // Test Case 2: Try to borrow from unsupported asset

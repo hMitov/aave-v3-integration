@@ -124,13 +124,13 @@ contract MockPool {
         if (aToken != address(0)) {
             uint256 li = MockAToken(aToken).liquidityIndex();
             uint256 scaledToBurn = (amount * 1e27) / li; // RAY = 1e27
-            
+
             uint256 providerScaled = MockAToken(aToken).scaledBalanceOf(msg.sender);
             if (providerScaled >= scaledToBurn) {
                 // Update the provider's scaled balance in the aToken
                 // This is what the AaveV3Provider expects to see change
                 MockAToken(aToken).setScaledBalanceFor(msg.sender, providerScaled - scaledToBurn);
-                
+
                 bool success = IERC20(asset).transfer(to, amount);
                 require(success, "Transfer failed");
                 withdrawn = amount;
@@ -142,9 +142,7 @@ contract MockPool {
     /// @param asset Underlying asset.
     /// @param amount Amount to borrow.
     /// @param onBehalfOf Borrower to receive debt.
-    function borrow(address asset, uint256 amount, uint256, uint16, address onBehalfOf)
-        external
-    {
+    function borrow(address asset, uint256 amount, uint256, uint16, address onBehalfOf) external {
         address debt = variableDebtTokens[asset];
         if (debt != address(0)) {
             uint256 current = MockVariableDebtToken(debt).scaledBalanceOf(onBehalfOf);
@@ -160,10 +158,7 @@ contract MockPool {
     /// @param amount Amount to repay.
     /// @param onBehalfOf Debtor whose position is repaid.
     /// @return repaid Amount accepted.
-    function repay(address asset, uint256 amount, uint256, address onBehalfOf)
-        external
-        returns (uint256 repaid)
-    {
+    function repay(address asset, uint256 amount, uint256, address onBehalfOf) external returns (uint256 repaid) {
         bool success = IERC20(asset).transferFrom(msg.sender, address(this), amount);
         require(success, "Transfer failed");
 
@@ -238,21 +233,21 @@ contract MockPool {
         // Create a mock configuration with LTV and liquidation threshold
         // LTV is bits 0-15, liquidation threshold is bits 16-31
         uint256 data = 0;
-        
+
         // Set LTV (bits 0-15) - default to 8000 (80%)
         uint256 ltv = mockLtv[asset] != 0 ? mockLtv[asset] : 8000;
         data |= (ltv << 0);
-        
+
         // Set liquidation threshold (bits 16-31) - default to 8250 (82.5%)
         uint256 lt = mockLiquidationThreshold[asset] != 0 ? mockLiquidationThreshold[asset] : 8250;
         data |= (lt << 16);
-        
+
         // Set other bits as needed for testing
         // Bit 56: reserve is active
         data |= (1 << 56);
         // Bit 58: borrowing is enabled
         data |= (1 << 58);
-        
+
         return DataTypes.ReserveConfigurationMap(data);
     }
 }

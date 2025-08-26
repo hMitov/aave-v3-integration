@@ -489,7 +489,7 @@ contract AaveV3ProviderTest is Test {
         vm.startPrank(user1);
         mockUsdc.approve(address(provider), DEPOSIT_AMOUNT);
         provider.deposit(address(mockUsdc), DEPOSIT_AMOUNT);
-        
+
         uint256 borrowAmount = 200e6;
         provider.borrow(address(mockUsdc), borrowAmount);
         vm.stopPrank();
@@ -847,7 +847,7 @@ contract AaveV3ProviderTest is Test {
         // Add another asset
         address newAsset = address(0x123);
         provider.setAssetSupported(newAsset, true, true);
-        
+
         assets = provider.getListedAssets();
         assertEq(assets.length, 2);
         assertEq(assets[0], address(mockUsdc));
@@ -859,7 +859,7 @@ contract AaveV3ProviderTest is Test {
         vm.startPrank(user1);
         mockUsdc.approve(address(provider), DEPOSIT_AMOUNT);
         provider.deposit(address(mockUsdc), DEPOSIT_AMOUNT);
-        
+
         // Borrow some amount to create debt
         uint256 borrowAmount = 200e6;
         provider.borrow(address(mockUsdc), borrowAmount);
@@ -879,19 +879,19 @@ contract AaveV3ProviderTest is Test {
     function testGetDebtTokenZeroAddress() public {
         // Test the _getDebtToken function when debt token address is zero
         // This should cover the uncovered branch BRDA:438,27,0,-
-        
+
         // Set the debt token to address(0) for this asset
         mockPool.setVariableDebtToken(address(mockUsdc), address(0));
-        
+
         // Try to borrow - this should call _getDebtToken and revert
         vm.startPrank(user1);
         mockUsdc.approve(address(provider), DEPOSIT_AMOUNT);
         provider.deposit(address(mockUsdc), DEPOSIT_AMOUNT);
-        
+
         // This should revert when trying to borrow because _getDebtToken will be called
         vm.expectRevert(IAaveV3Provider.DebtTokenAddressZero.selector);
         provider.borrow(address(mockUsdc), 100e6);
-        
+
         vm.stopPrank();
     }
 
@@ -919,14 +919,14 @@ contract AaveV3ProviderTest is Test {
         mockUsdc.approve(address(provider), DEPOSIT_AMOUNT);
         provider.deposit(address(mockUsdc), DEPOSIT_AMOUNT);
         vm.stopPrank();
-        
+
         // Now withdraw - this should call _clearApproval with non-zero allowance
         vm.startPrank(user1);
         uint256 withdrawAmount = 100e6;
         uint256 actualWithdrawn = provider.withdraw(address(mockUsdc), withdrawAmount);
         assertEq(actualWithdrawn, withdrawAmount);
         vm.stopPrank();
-        
+
         // Verify the withdrawal worked
         uint256 userBalance = provider.getUserSupplyBalance(user1, address(mockUsdc));
         assertLt(userBalance, DEPOSIT_AMOUNT);
@@ -937,25 +937,25 @@ contract AaveV3ProviderTest is Test {
         vm.startPrank(user1);
         mockUsdc.approve(address(provider), DEPOSIT_AMOUNT);
         provider.deposit(address(mockUsdc), DEPOSIT_AMOUNT);
-        
+
         // Check initial state
         uint256 initialUserScaled = provider.userScaledSupply(user1, address(mockUsdc));
         console.log("Initial userScaledSupply:", initialUserScaled);
-        
+
         uint256 initialProviderScaled = mockAToken.scaledBalanceOf(address(provider));
         console.log("Initial provider scaled in aToken:", initialProviderScaled);
-        
+
         // Withdraw
         uint256 withdrawn = provider.withdraw(address(mockUsdc), DEPOSIT_AMOUNT);
         console.log("Withdrawn amount:", withdrawn);
-        
+
         // Check final state
         uint256 finalUserScaled = provider.userScaledSupply(user1, address(mockUsdc));
         console.log("Final userScaledSupply:", finalUserScaled);
-        
+
         uint256 finalProviderScaled = mockAToken.scaledBalanceOf(address(provider));
         console.log("Final provider scaled in aToken:", finalProviderScaled);
-        
+
         vm.stopPrank();
     }
 }

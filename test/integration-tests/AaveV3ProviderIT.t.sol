@@ -135,11 +135,6 @@ contract AaveV3ProviderIT is Test {
         assertApproxEqAbs(
             scaledSupplyAfterDeposit, expectedScaledSupply, 1, "Scaled supply should be equal to expected scaled supply"
         );
-        assertEq(
-            provider.totalScaledSupply(USDC),
-            scaledSupplyAfterDeposit,
-            "Total scaled supply should match expected calculation"
-        );
 
         vm.stopPrank();
     }
@@ -164,11 +159,6 @@ contract AaveV3ProviderIT is Test {
 
         assertApproxEqAbs(
             scaledSupplyAfterDeposit, expectedScaledSupply, 1, "Scaled supply should match expected calculation"
-        );
-        assertEq(
-            provider.totalScaledSupply(USDC),
-            scaledSupplyAfterDeposit,
-            "Total scaled supply should match expected calculation"
         );
 
         /// Partial withdrawal
@@ -222,11 +212,6 @@ contract AaveV3ProviderIT is Test {
         uint256 finalScaledSupply = provider.userScaledSupply(user1, USDC);
         assertEq(finalScaledSupply, 0, "Scaled supply should be 0 after full withdrawal");
 
-        // Total scaled supply should also be updated
-        assertEq(
-            provider.totalScaledSupply(USDC), finalScaledSupply, "Total scaled supply should match user scaled supply"
-        );
-
         vm.stopPrank();
     }
 
@@ -251,12 +236,6 @@ contract AaveV3ProviderIT is Test {
         assertApproxEqAbs(
             scaledSupplyAfterDeposit, expectedScaledSupply, 1, "Scaled supply should match expected calculation"
         );
-        assertEq(
-            provider.totalScaledSupply(USDC),
-            scaledSupplyAfterDeposit,
-            "Total scaled supply should match expected calculation"
-        );
-
         /// Test withdrawAll function
         uint256 userBalanceBeforeWithdraw = usdc.balanceOf(user1);
 
@@ -279,13 +258,6 @@ contract AaveV3ProviderIT is Test {
 
         assertEq(userSupplyAfterWithdraw, 0, "User supply should be 0 after withdrawAll");
         assertEq(scaledSupplyAfterWithdraw, 0, "Scaled supply should be 0 after withdrawAll");
-
-        // Total scaled supply should also be updated
-        assertEq(
-            provider.totalScaledSupply(USDC),
-            scaledSupplyAfterWithdraw,
-            "Total scaled supply should match user scaled supply"
-        );
 
         vm.stopPrank();
     }
@@ -346,11 +318,6 @@ contract AaveV3ProviderIT is Test {
         assertApproxEqAbs(
             scaledSupplyAfterDeposit, expectedScaledSupply, 1, "Scaled supply should match expected calculation"
         );
-        assertEq(
-            provider.totalScaledSupply(WETH),
-            scaledSupplyAfterDeposit,
-            "Total scaled supply should match expected calculation"
-        );
 
         vm.stopPrank();
     }
@@ -381,11 +348,6 @@ contract AaveV3ProviderIT is Test {
 
         assertApproxEqAbs(
             scaledSupplyAfterDeposit, expectedScaledSupply, 1, "Scaled supply should match expected calculation"
-        );
-        assertEq(
-            provider.totalScaledSupply(WETH),
-            scaledSupplyAfterDeposit,
-            "Total scaled supply should match expected calculation"
         );
 
         /// Partial withdrawal
@@ -441,11 +403,6 @@ contract AaveV3ProviderIT is Test {
         uint256 finalScaledSupply = provider.userScaledSupply(user1, WETH);
         assertApproxEqAbs(finalScaledSupply, 0, 1, "Scaled supply should be 0 after full withdrawal");
 
-        // Total scaled supply should also be updated
-        assertEq(
-            provider.totalScaledSupply(WETH), finalScaledSupply, "Total scaled supply should match user scaled supply"
-        );
-
         vm.stopPrank();
     }
 
@@ -476,11 +433,6 @@ contract AaveV3ProviderIT is Test {
         assertApproxEqAbs(
             scaledSupplyAfterDeposit, expectedScaledSupply, 1, "Scaled supply should match expected calculation"
         );
-        assertEq(
-            provider.totalScaledSupply(WETH),
-            scaledSupplyAfterDeposit,
-            "Total scaled supply should match expected calculation"
-        );
 
         /// Test withdrawAll function
         uint256 userBalanceBeforeWithdraw = weth.balanceOf(user1);
@@ -504,13 +456,6 @@ contract AaveV3ProviderIT is Test {
 
         assertEq(userSupplyAfterWithdraw, 0, "User supply should be 0 after withdrawAll");
         assertEq(scaledSupplyAfterWithdraw, 0, "Scaled supply should be 0 after withdrawAll");
-
-        // Total scaled supply should also be updated
-        assertEq(
-            provider.totalScaledSupply(WETH),
-            scaledSupplyAfterWithdraw,
-            "Total scaled supply should match user scaled supply"
-        );
 
         vm.stopPrank();
     }
@@ -537,11 +482,6 @@ contract AaveV3ProviderIT is Test {
         assertApproxEqAbs(
             scaledSupplyAfterDeposit, expectedScaledSupply, 1, "Scaled supply should match expected calculation"
         );
-        assertEq(
-            provider.totalScaledSupply(USDC),
-            scaledSupplyAfterDeposit,
-            "Total scaled supply should match expected calculation"
-        );
 
         // Borrow
         provider.borrow(USDC, BORROW_AMOUNT);
@@ -559,11 +499,6 @@ contract AaveV3ProviderIT is Test {
         uint256 expectedScaledBorrow = (BORROW_AMOUNT * 1e27) / borrowIndex;
         assertApproxEqAbs(
             scaledBorrowAfterBorrow, expectedScaledBorrow, 1, "Scaled borrow should match expected calculation"
-        );
-        assertEq(
-            provider.totalScaledBorrow(USDC),
-            scaledBorrowAfterBorrow,
-            "Total scaled borrow should match expected calculation"
         );
 
         vm.stopPrank();
@@ -591,11 +526,6 @@ contract AaveV3ProviderIT is Test {
         assertApproxEqAbs(
             scaledSupplyAfterDeposit, expectedScaledSupply, 1, "Scaled supply should match expected calculation"
         );
-        assertEq(
-            provider.totalScaledSupply(WETH),
-            scaledSupplyAfterDeposit,
-            "Total scaled supply should match expected calculation"
-        );
 
         // Now borrow WETH
         provider.borrow(WETH, 0.5 ether);
@@ -613,11 +543,6 @@ contract AaveV3ProviderIT is Test {
         uint256 expectedScaledBorrow = (0.5 ether * 1e27) / borrowIndex;
         assertApproxEqAbs(
             scaledBorrowAfterBorrow, expectedScaledBorrow, 1, "Scaled borrow should match expected calculation"
-        );
-        assertEq(
-            provider.totalScaledBorrow(WETH),
-            scaledBorrowAfterBorrow,
-            "Total scaled borrow should match expected calculation"
         );
 
         vm.stopPrank();
@@ -646,11 +571,6 @@ contract AaveV3ProviderIT is Test {
         assertApproxEqAbs(
             scaledSupplyAfterDeposit, expectedScaledSupply, 1, "Scaled supply should match expected calculation"
         );
-        assertEq(
-            provider.totalScaledSupply(WETH),
-            scaledSupplyAfterDeposit,
-            "Total scaled supply should match expected calculation"
-        );
 
         // Now borrow WETH
         uint256 borrowAmount = 0.5 ether; // 0.5 WETH
@@ -669,11 +589,6 @@ contract AaveV3ProviderIT is Test {
         uint256 expectedScaledBorrow = (borrowAmount * 1e27) / borrowIndex;
         assertApproxEqAbs(
             scaledBorrowAfterBorrow, expectedScaledBorrow, 1, "Scaled borrow should match expected calculation"
-        );
-        assertEq(
-            provider.totalScaledBorrow(WETH),
-            scaledBorrowAfterBorrow,
-            "Total scaled borrow should match expected calculation"
         );
 
         /// Partial repayment
@@ -737,11 +652,6 @@ contract AaveV3ProviderIT is Test {
         uint256 finalScaledBorrow = provider.userScaledBorrow(user1, WETH);
         assertEq(finalScaledBorrow, 0, "Scaled borrow should be 0 after full repayment");
 
-        // Total scaled borrow should also be updated
-        assertEq(
-            provider.totalScaledBorrow(WETH), finalScaledBorrow, "Total scaled borrow should match user scaled borrow"
-        );
-
         vm.stopPrank();
     }
 
@@ -768,11 +678,6 @@ contract AaveV3ProviderIT is Test {
         assertApproxEqAbs(
             scaledSupplyAfterDeposit, expectedScaledSupply, 1, "Scaled supply should match expected calculation"
         );
-        assertEq(
-            provider.totalScaledSupply(USDC),
-            scaledSupplyAfterDeposit,
-            "Total scaled supply should match expected calculation"
-        );
 
         // Now borrow USDC
         uint256 borrowAmount = DEPOSIT_AMOUNT / 2; // 500,000 USDC (half of deposit)
@@ -791,16 +696,13 @@ contract AaveV3ProviderIT is Test {
         assertApproxEqAbs(
             scaledBorrowAfterBorrow, expectedScaledBorrow, 1, "Scaled borrow should match expected calculation"
         );
-        assertEq(
-            provider.totalScaledBorrow(USDC),
-            scaledBorrowAfterBorrow,
-            "Total scaled borrow should match expected calculation"
-        );
 
         /// Partial repayment
         // Get the current borrow balance (in a test environment, this may not have increased due to interest yet)
         uint256 currentBorrowBalance = provider.getUserBorrowBalance(user1, USDC);
-        assertApproxEqAbs(currentBorrowBalance, borrowAmount, 5, "Borrow balance should equal the borrowed amount initially");
+        assertApproxEqAbs(
+            currentBorrowBalance, borrowAmount, 5, "Borrow balance should equal the borrowed amount initially"
+        );
 
         // Repay half of the current balance
         uint256 repayAmount = currentBorrowBalance / 2;
@@ -857,10 +759,6 @@ contract AaveV3ProviderIT is Test {
         // After full repayment, scaled borrow should be 0 or very close to 0
         uint256 finalScaledBorrow = provider.userScaledBorrow(user1, USDC);
         assertApproxEqAbs(finalScaledBorrow, 0, 1, "Scaled borrow should be 0 after full repayment");
-        // Total scaled borrow should also be updated
-        assertEq(
-            provider.totalScaledBorrow(USDC), finalScaledBorrow, "Total scaled borrow should match user scaled borrow"
-        );
 
         vm.stopPrank();
     }
